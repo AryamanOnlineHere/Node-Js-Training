@@ -1,25 +1,25 @@
 const db = require("../models");
+const { checkDuplicateTitle } = require("../utils/validations");
 const Tutorial = db.tutorials;
-const Op = db.Sequelize.Op;
 
 // Create and Save a new Tutorial
 exports.create = (req, res) => {
   // Validate request
-  if (!req.body.title) {
-    res.status(400).send({
-      message: "Content can not be empty!"
-    });
+  if (!req.body.title.trim()) {
+    res.status(400).send({ message: "Content can not be empty!" });
     return;
   }
+  checkDuplicateTitle(req.body.title);
   // Create a Tutorial
-  const tutorial = {
+  const tutorial = new Tutorial({ //mongoose model object
     title: req.body.title,
     description: req.body.description,
     published: req.body.published ? req.body.published : false
-  };
-
+  });
+//here?
   // Save Tutorial in the database
-  Tutorial.create(tutorial)
+  tutorial
+    .save(tutorial)
     .then(data => {
       res.send(data);
     })
@@ -34,9 +34,9 @@ exports.create = (req, res) => {
 // Retrieve all Tutorials from the database.
 exports.findAll = (req, res) => {
   const title = req.query.title;
-  var condition = title ? { title: { [Op.like]: `%${title}%` } } : null;
+  var condition = title ? { title: { $regex: new RegExp(title), $options: "i" } } : {};
 
-  Tutorial.findAll({ where: condition })
+  Tutorial.find(condition)
     .then(data => {
       res.send(data);
     })
@@ -52,40 +52,36 @@ exports.findAll = (req, res) => {
 exports.findOne = (req, res) => {
   const id = req.params.id;
 
-  Tutorial.findByPk(id)
+  Tutorial.findById(id)
     .then(data => {
-      if (data) {
-        res.send(data);
-      } else {
-        res.status(404).send({
-          message: `Cannot find Tutorial with id=${id}.`
-        });
-      }
+      if (!data)
+        res.status(404).send({ message: "Not found Tutorial with id " + id });
+      else res.send(data);
     })
     .catch(err => {
-      res.status(500).send({
-        message: "Error retrieving Tutorial with id=" + id
-      });
+      res
+        .status(500)
+        .send({ message: "Error retrieving Tutorial with id=" + id });
     });
 };
 
 // Update a Tutorial by the id in the request
 exports.update = (req, res) => {
+  if (!req.body) {
+    return res.status(400).send({
+      message: "Data to update can not be empty!"
+    });
+  }
+
   const id = req.params.id;
 
-  Tutorial.update(req.body, {
-    where: { id: id }
-  })
-    .then(num => {
-      if (num == 1) {
-        res.send({
-          message: "Tutorial was updated successfully."
+  Tutorial.findByIdAndUpdate(id, req.body, { useFindAndModify: false })
+    .then(data => {
+      if (!data) {
+        res.status(404).send({
+          message: `Cannot update Tutorial with id=${id}. Maybe Tutorial was not found!`
         });
-      } else {
-        res.send({
-          message: `Cannot update Tutorial with id=${id}. Maybe Tutorial was not found or req.body is empty!`
-        });
-      }
+      } else res.send({ message: "Tutorial was updated successfully." });
     })
     .catch(err => {
       res.status(500).send({
@@ -98,17 +94,15 @@ exports.update = (req, res) => {
 exports.delete = (req, res) => {
   const id = req.params.id;
 
-  Tutorial.destroy({
-    where: { id: id }
-  })
-    .then(num => {
-      if (num == 1) {
-        res.send({
-          message: "Tutorial was deleted successfully!"
+  Tutorial.findByIdAndRemove(id, { useFindAndModify: false })
+    .then(data => {
+      if (!data) {
+        res.status(404).send({
+          message: `Cannot delete Tutorial with id=${id}. Maybe Tutorial was not found!`
         });
       } else {
         res.send({
-          message: `Cannot delete Tutorial with id=${id}. Maybe Tutorial was not found!`
+          message: "Tutorial was deleted successfully!" //bad practice to send message like this
         });
       }
     })
@@ -121,12 +115,11 @@ exports.delete = (req, res) => {
 
 // Delete all Tutorials from the database.
 exports.deleteAll = (req, res) => {
-  Tutorial.destroy({
-    where: {},
-    truncate: false
-  })
-    .then(nums => {
-      res.send({ message: `${nums} Tutorials were deleted successfully!` });
+  Tutorial.deleteMany({})
+    .then(data => {
+      res.send({
+        message: `${data.deletedCount} Tutorials were deleted successfully!`
+      });
     })
     .catch(err => {
       res.status(500).send({
@@ -136,9 +129,9 @@ exports.deleteAll = (req, res) => {
     });
 };
 
-// find all published Tutorial
+// Find all published Tutorials
 exports.findAllPublished = (req, res) => {
-  Tutorial.findAll({ where: { published: true } })
+  Tutorial.find({ published: true })
     .then(data => {
       res.send(data);
     })
